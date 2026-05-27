@@ -1,26 +1,27 @@
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
+import re
 
-# -----------------------------
+# -----------------------------------
 # 한글 폰트 설정
-# -----------------------------
-plt.rcParams['font.family'] = 'NanumGothic'
-plt.rcParams['axes.unicode_minus'] = False
+# -----------------------------------
+plt.rcParams["font.family"] = "NanumGothic"
+plt.rcParams["axes.unicode_minus"] = False
 
-# -----------------------------
+# -----------------------------------
 # 페이지 설정
-# -----------------------------
+# -----------------------------------
 st.set_page_config(
-    page_title="인구 통계",
+    page_title="서울시 인구 분석",
     layout="wide"
 )
 
-st.title("행정구별 연령 인구 분석")
+st.title("서울시 연령별 인구 분석")
 
-# -----------------------------
+# -----------------------------------
 # 데이터 불러오기
-# -----------------------------
+# -----------------------------------
 @st.cache_data
 def load_data():
 
@@ -31,100 +32,80 @@ def load_data():
 
     return df
 
+
 df = load_data()
 
-# -----------------------------
-# 컬럼 확인
-# -----------------------------
-st.write("현재 컬럼명:")
-st.write(df.columns)
-
-# -----------------------------
-# 행정구 컬럼 자동 찾기
-# -----------------------------
-district_col = None
-
-for col in df.columns:
-    if "행정구역" in col:
-        district_col = col
-        break
-
-if district_col is None:
-    st.error("행정구역 컬럼을 찾을 수 없습니다.")
-    st.stop()
-
-# -----------------------------
+# -----------------------------------
 # 행정구 선택
-# -----------------------------
-districts = df[district_col].unique()
+# -----------------------------------
+districts = df["행정구역"].tolist()
 
 selected_district = st.selectbox(
-    "행정구 선택",
+    "행정구를 선택하세요",
     districts
 )
 
-# -----------------------------
-# 선택 데이터
-# -----------------------------
-selected_row = df[df[district_col] == selected_district].iloc[0]
+# -----------------------------------
+# 선택한 행 가져오기
+# -----------------------------------
+selected_row = df[df["행정구역"] == selected_district].iloc[0]
 
-# -----------------------------
-# 나이 컬럼 찾기
-# -----------------------------
+# -----------------------------------
+# 2026년04월 연령 컬럼만 선택
+# -----------------------------------
 age_columns = []
 
 for col in df.columns:
 
-    # 0세 ~ 100세 이상
-    if "세" in str(col):
+    if "2026년04월_거주자_" in col and "세" in col:
 
-        # 총인구 같은 컬럼 제외
-        if "계" not in str(col):
+        # 총인구 제외
+        if "총인구수" not in col and "연령구간인구수" not in col:
             age_columns.append(col)
 
-# -----------------------------
-# 데이터 생성
-# -----------------------------
+# -----------------------------------
+# 나이 / 인구수 추출
+# -----------------------------------
 ages = []
 population = []
 
 for col in age_columns:
 
-    try:
-        age_text = (
-            str(col)
-            .split("세")[0]
-            .replace(" ", "")
-        )
+    # 숫자 추출
+    match = re.search(r'_(\d+)세', col)
 
-        age = int(age_text)
+    if match:
 
-        value = pd.to_numeric(selected_row[col], errors="coerce")
+        age = int(match.group(1))
+
+        value = str(selected_row[col]).replace(",", "")
+
+        try:
+            value = int(value)
+        except:
+            value = 0
 
         ages.append(age)
         population.append(value)
 
-    except:
-        continue
-
-# -----------------------------
-# 데이터 정렬
-# -----------------------------
-data = pd.DataFrame({
+# -----------------------------------
+# 데이터프레임 생성
+# -----------------------------------
+graph_df = pd.DataFrame({
     "age": ages,
     "population": population
 })
 
-data = data.sort_values("age")
+graph_df = graph_df.sort_values("age")
 
-# -----------------------------
-# 그래프
-# -----------------------------
+# -----------------------------------
+# 그래프 생성
+# -----------------------------------
 fig, ax = plt.subplots(figsize=(16, 7))
 
 ax.plot(
-    data["age"],
-    data["population"],
+    graph_df["age"],
+    graph_df["population"],
     color="hotpink",
     linewidth=3
 )
@@ -132,17 +113,18 @@ ax.plot(
 # 제목
 ax.set_title(
     f"{selected_district} 연령별 인구수",
-    fontsize=20
+    fontsize=22
 )
 
-# 축 이름
+# 축
 ax.set_xlabel("나이", fontsize=14)
 ax.set_ylabel("인구수", fontsize=14)
 
-# 10살 단위
+# -----------------------------------
+# 10살 단위 구분선
+# -----------------------------------
 ax.set_xticks(range(0, 101, 10))
 
-# 세로선
 ax.grid(
     axis="x",
     linestyle="--",
@@ -155,7 +137,7 @@ ax.spines["right"].set_visible(False)
 
 plt.tight_layout()
 
-# -----------------------------
+# -----------------------------------
 # 출력
-# -----------------------------
+# -----------------------------------
 st.pyplot(fig)

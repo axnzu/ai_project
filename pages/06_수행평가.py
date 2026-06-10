@@ -1,81 +1,90 @@
-```python
 import streamlit as st
 import pandas as pd
 import random
 import re
 
 st.set_page_config(
-    page_title="서울 카페 창업 컨설턴트",
+    page_title="AI 카페 창업 컨설턴트",
     page_icon="☕",
     layout="wide"
 )
 
-st.title("☕ 서울 카페 창업 컨설턴트")
-st.caption("서울시 휴게음식점 인허가 데이터를 활용한 창업 아이디어 추천")
-
-# -----------------------------
+# =========================
 # 데이터 불러오기
-# -----------------------------
+# =========================
+
 @st.cache_data
 def load_data():
 
-    df = pd.read_csv(
-        "서울시 휴게음식점 인허가 정보 (1).csv",
-        encoding="cp949"
-    )
+    encodings = ["cp949", "utf-8", "utf-8-sig"]
 
-    return df
+    for enc in encodings:
+        try:
+            return pd.read_csv("cafe_data.csv", encoding=enc)
+        except:
+            pass
 
-df = load_data()
+    return pd.read_csv("cafe_data.csv")
 
-# -----------------------------
-# 카페 데이터 추출
-# -----------------------------
-cafe_df = df[
-    df["업태구분명"].astype(str).str.contains(
-        "커피|카페",
-        na=False
-    )
-].copy()
+try:
+    df = load_data()
 
-# -----------------------------
+except Exception as e:
+    st.error(f"파일을 읽을 수 없습니다.\n{e}")
+    st.stop()
+
+# =========================
 # 자치구 추출
-# -----------------------------
-def extract_gu(address):
+# =========================
 
-    try:
-        result = re.search(r"서울특별시\s+(\S+구)", str(address))
+def extract_gu(text):
 
-        if result:
-            return result.group(1)
+    if pd.isna(text):
+        return "기타"
 
-    except:
-        pass
+    match = re.search(r"(\S+구)", str(text))
+
+    if match:
+        return match.group(1)
 
     return "기타"
 
-cafe_df["자치구"] = cafe_df["지번주소"].apply(extract_gu)
+address_col = None
 
-# -----------------------------
-# 실제 인기 카페 이름 단어 추출
-# -----------------------------
-words = []
+for col in df.columns:
 
-for name in cafe_df["사업장명"].dropna():
+    if "주소" in col:
+        address_col = col
+        break
 
-    name = str(name)
+if address_col is None:
+    st.error("주소 컬럼을 찾을 수 없습니다.")
+    st.stop()
 
-    tokens = re.findall(r"[가-힣A-Za-z]{2,}", name)
+df["자치구"] = df[address_col].apply(extract_gu)
 
-    words.extend(tokens)
+# =========================
+# 카페 수 분석
+# =========================
 
-freq = pd.Series(words).value_counts()
+district_counts = (
+    df["자치구"]
+    .value_counts()
+    .sort_values(ascending=False)
+)
 
-popular_words = list(freq.head(100).index)
+districts = sorted(df["자치구"].unique())
 
-# -----------------------------
-# 사용자 입력
-# -----------------------------
+# =========================
+# UI
+# =========================
+
+st.title("☕ AI 카페 창업 컨설턴트")
+
+st.write(
+    "서울시 휴게음식점 인허가 데이터를 활용하여 "
+    "카페 창업 아이디어를 추천합니다."
+)
 
 themes = [
     "디저트 카페",
@@ -83,8 +92,8 @@ themes = [
     "감성 카페",
     "공부 카페",
     "반려동물 카페",
-    "포토존 카페",
     "루프탑 카페",
+    "포토존 카페",
     "책 카페",
     "가족 카페",
     "건강 음료 카페"
@@ -99,10 +108,6 @@ customers = [
     "중장년층"
 ]
 
-districts = sorted(
-    cafe_df["자치구"].dropna().unique()
-)
-
 seasons = [
     "봄",
     "여름",
@@ -110,43 +115,45 @@ seasons = [
     "겨울"
 ]
 
-st.header("창업 조건 입력")
+theme = st.selectbox(
+    "카페 테마 선택",
+    themes
+)
 
-theme = st.selectbox("카페 테마", themes)
+customer = st.selectbox(
+    "주요 고객층 선택",
+    customers
+)
 
-customer = st.selectbox("주요 고객층", customers)
+district = st.selectbox(
+    "창업 희망 자치구",
+    districts
+)
 
-district = st.selectbox("창업 희망 자치구", districts)
+season = st.selectbox(
+    "계절 선택",
+    seasons
+)
 
-season = st.selectbox("계절", seasons)
+# =========================
+# 결과 생성
+# =========================
 
-# -----------------------------
-# 추천 버튼
-# -----------------------------
 if st.button("🚀 창업 아이디어 추천"):
 
-    district_count = len(
-        cafe_df[cafe_df["자치구"] == district]
+    cafe_count = int(
+        district_counts.get(district, 0)
     )
 
-    active_count = len(
-        cafe_df[
-            (cafe_df["자치구"] == district)
-            &
-            (cafe_df["영업상태명"] == "영업")
-        ]
-    )
-
-    # 경쟁도 계산
-    if active_count > 1500:
+    if cafe_count > 3000:
         competition = "매우 높음"
         score = 60
 
-    elif active_count > 700:
+    elif cafe_count > 1500:
         competition = "높음"
         score = 75
 
-    elif active_count > 300:
+    elif cafe_count > 700:
         competition = "보통"
         score = 85
 
@@ -154,48 +161,70 @@ if st.button("🚀 창업 아이디어 추천"):
         competition = "낮음"
         score = 95
 
-    # 카페 이름 추천
-    cafe_names = []
+    first_names = [
+        "모먼트",
+        "블룸",
+        "브리즈",
+        "라온",
+        "포레스트",
+        "루미",
+        "하루",
+        "멜로우",
+        "스테이",
+        "어반"
+    ]
 
-    while len(cafe_names) < 3:
+    second_names = [
+        "카페",
+        "커피",
+        "라운지",
+        "하우스",
+        "스토리",
+        "플레이스"
+    ]
 
-        word = random.choice(popular_words[:50])
+    names = []
 
-        name = f"{word} {random.choice(['카페','커피','라운지','하우스'])}"
+    while len(names) < 3:
 
-        if name not in cafe_names:
-            cafe_names.append(name)
+        name = (
+            random.choice(first_names)
+            + " "
+            + random.choice(second_names)
+        )
 
-    # 시즌 메뉴
-    season_menu = {
-        "봄":["벚꽃라떼","딸기케이크","유자에이드"],
-        "여름":["망고빙수","수박주스","콜드브루"],
-        "가을":["고구마라떼","밤케이크","단호박타르트"],
-        "겨울":["초코라떼","뱅쇼","생강차"]
+        if name not in names:
+            names.append(name)
+
+    season_menus = {
+        "봄": ["벚꽃라떼", "딸기케이크", "유자에이드"],
+        "여름": ["망고빙수", "콜드브루", "수박주스"],
+        "가을": ["고구마라떼", "밤케이크", "단호박타르트"],
+        "겨울": ["초코라떼", "뱅쇼", "생강차"]
     }
 
-    st.header("🎉 AI 추천 결과")
+    st.header("🎉 추천 결과")
 
-    col1,col2 = st.columns(2)
+    col1, col2 = st.columns(2)
 
     with col1:
 
         st.subheader("🏷 추천 카페 이름")
 
-        for n in cafe_names:
-            st.write("•", n)
+        for idx, name in enumerate(names, start=1):
+            st.write(f"{idx}. {name}")
 
-        st.subheader("📖 추천 컨셉")
+        st.subheader("📖 컨셉 설명")
 
         st.success(
-            f"{theme} 컨셉을 중심으로 "
-            f"{customer} 고객이 자주 찾는 공간을 목표로 운영"
+            f"{customer} 고객이 자주 방문하고 "
+            f"오래 머물고 싶은 {theme} 컨셉"
         )
 
         st.subheader("☕ 시그니처 메뉴")
 
-        for m in season_menu[season]:
-            st.write("✔", m)
+        for menu in season_menus[season]:
+            st.write("✔", menu)
 
     with col2:
 
@@ -203,12 +232,7 @@ if st.button("🚀 창업 아이디어 추천"):
 
         st.metric(
             "해당 자치구 카페 수",
-            f"{district_count:,}"
-        )
-
-        st.metric(
-            "영업중 카페 수",
-            f"{active_count:,}"
+            f"{cafe_count:,}"
         )
 
         st.metric(
@@ -216,49 +240,63 @@ if st.button("🚀 창업 아이디어 추천"):
             f"{score}점"
         )
 
-        st.write(f"경쟁도 : {competition}")
+        st.metric(
+            "경쟁도",
+            competition
+        )
+
+        st.subheader("🪑 인테리어 추천")
+
+        st.write(
+            """
+            • 따뜻한 간접조명
+
+            • SNS 포토존 설치
+
+            • 편안한 좌석 구성
+
+            • 브랜드 컬러 통일
+            """
+        )
 
     st.divider()
-
-    st.subheader("🪑 인테리어 추천")
-
-    st.write(
-        """
-        - SNS 인증샷 포토존
-        - 따뜻한 간접조명
-        - 편안한 좌석 배치
-        - 브랜드 컬러 통일
-        """
-    )
 
     st.subheader("📢 홍보 문구")
 
     st.info(
-        f"{district}에서 가장 특별한 {theme}, "
-        f"지금 만나보세요."
+        f"{district}에서 만나는 특별한 {theme}! "
+        f"오늘의 여유를 즐겨보세요."
     )
 
     st.subheader("📱 추천 해시태그")
 
     st.write(
-        "#카페창업 #서울카페 #감성카페 "
-        "#카페추천 #신상카페"
+        "#카페추천 #감성카페 #서울카페 "
+        "#신상카페 #커피맛집"
     )
 
     st.subheader("🚀 차별화 전략")
 
-    st.write("""
-    ✅ 시즌 한정 메뉴 출시
-    ✅ SNS 인증 이벤트
-    ✅ 스탬프 적립 제도
-    ✅ 지역 커뮤니티 연계 행사
-    """)
+    st.write("✅ 시즌 한정 메뉴 운영")
+    st.write("✅ SNS 인증 이벤트")
+    st.write("✅ 스탬프 적립 제도")
+    st.write("✅ 지역 커뮤니티 연계")
 
     st.subheader("💡 데이터 기반 인사이트")
 
     st.success(
-        f"{district}에는 현재 "
-        f"{active_count:,}개의 영업 중 카페가 있습니다. "
-        f"차별화된 컨셉이 중요합니다."
+        f"{district}에는 현재 약 {cafe_count:,}개의 "
+        f"휴게음식점이 등록되어 있습니다."
     )
-```
+
+# =========================
+# 자치구 현황
+# =========================
+
+st.divider()
+
+st.subheader("서울 자치구별 휴게음식점 수 TOP 10")
+
+st.bar_chart(
+    district_counts.head(10)
+)

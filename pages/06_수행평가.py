@@ -10,80 +10,64 @@ st.set_page_config(
 )
 
 st.title("☕ AI 카페 창업 컨설턴트")
-st.write("서울시 휴게음식점 인허가 데이터를 활용한 카페 창업 아이디어 추천")
+st.caption("서울시 휴게음식점 인허가 데이터 기반")
 
-uploaded_file = st.file_uploader(
-    "서울시 휴게음식점 인허가 CSV 업로드",
-    type=["csv"]
-)
+# ==================================
+# 데이터 로드
+# ==================================
+@st.cache_data
+def load_data():
 
-if uploaded_file is None:
-    st.info("CSV 파일을 업로드해주세요.")
-    st.stop()
+    for enc in ["cp949", "utf-8-sig", "utf-8"]:
+        try:
+            return pd.read_csv("cafe_data.csv", encoding=enc)
+        except:
+            pass
 
-# CSV 읽기
-df = None
+    return None
 
-for enc in ["cp949", "utf-8-sig", "utf-8"]:
-    try:
-        df = pd.read_csv(uploaded_file, encoding=enc)
-        break
-    except Exception:
-        pass
+
+df = load_data()
 
 if df is None:
-    st.error("CSV 파일을 읽을 수 없습니다.")
+    st.error("cafe_data.csv 파일을 찾을 수 없습니다.")
     st.stop()
 
-# 주소 컬럼 찾기
-address_col = None
-
-for col in [
-    "소재지전체주소",
-    "도로명전체주소"
-]:
-    if col in df.columns:
-        address_col = col
-        break
-
-if address_col is None:
-    for col in df.columns:
-        if "주소" in str(col):
-            address_col = col
-            break
-
-if address_col is None:
-    st.error("주소 컬럼을 찾을 수 없습니다.")
-    st.write(df.columns.tolist())
-    st.stop()
-
+# ==================================
 # 카페 데이터만 추출
-cafe_df = df.copy()
+# ==================================
+if "업태구분명" in df.columns:
 
-if "업태구분명" in cafe_df.columns:
-    cafe_df = cafe_df[
-        cafe_df["업태구분명"]
+    cafe_df = df[
+        df["업태구분명"]
         .astype(str)
         .str.contains("커피|카페", na=False)
-    ]
+    ].copy()
 
+else:
+    cafe_df = df.copy()
+
+# 카페가 하나도 안 잡히면 전체 사용
 if len(cafe_df) == 0:
     cafe_df = df.copy()
 
+# ==================================
 # 자치구 추출
-def extract_gu(text):
+# ==================================
+def extract_gu(address):
 
-    if pd.isna(text):
+    if pd.isna(address):
         return "기타"
 
-    match = re.search(r"(\S+구)", str(text))
+    match = re.search(r"(\S+구)", str(address))
 
     if match:
         return match.group(1)
 
     return "기타"
 
-cafe_df["자치구"] = cafe_df[address_col].apply(extract_gu)
+
+cafe_df["자치구"] = cafe_df["지번주소"].apply(extract_gu)
 
 district_counts = (
     cafe_df["자치구"]
@@ -97,7 +81,9 @@ districts = sorted(
     .unique()
 )
 
+# ==================================
 # 실제 사업장명 분석
+# ==================================
 popular_words = []
 
 if "사업장명" in cafe_df.columns:
@@ -118,11 +104,14 @@ if "사업장명" in cafe_df.columns:
         popular_words = (
             pd.Series(words)
             .value_counts()
-            .head(50)
+            .head(100)
             .index
             .tolist()
         )
 
+# ==================================
+# 입력
+# ==================================
 themes = [
     "디저트 카페",
     "브런치 카페",
@@ -152,7 +141,7 @@ seasons = [
     "겨울"
 ]
 
-st.header("창업 조건 입력")
+st.header("창업 조건 선택")
 
 theme = st.selectbox(
     "카페 테마",
@@ -174,6 +163,9 @@ season = st.selectbox(
     seasons
 )
 
+# ==================================
+# 추천 버튼
+# ==================================
 if st.button("🚀 창업 아이디어 추천"):
 
     cafe_count = int(
@@ -183,16 +175,20 @@ if st.button("🚀 창업 아이디어 추천"):
     if cafe_count > 1500:
         competition = "매우 높음"
         score = 60
+
     elif cafe_count > 800:
         competition = "높음"
         score = 75
+
     elif cafe_count > 300:
         competition = "보통"
         score = 85
+
     else:
         competition = "낮음"
         score = 95
 
+    # 실제 데이터 기반 이름 생성
     cafe_names = []
 
     while len(cafe_names) < 3:
@@ -200,77 +196,76 @@ if st.button("🚀 창업 아이디어 추천"):
         if len(popular_words) > 0:
 
             word = random.choice(
-                popular_words[:20]
+                popular_words[:30]
             )
 
-            name = f"{word} 카페"
+            suffix = random.choice(
+                ["카페", "커피", "라운지"]
+            )
+
+            name = f"{word} {suffix}"
 
         else:
 
             name = random.choice([
                 "모먼트 카페",
                 "블룸 카페",
-                "라온 카페",
-                "하루 카페",
-                "포레스트 카페"
+                "하루 카페"
             ])
 
         if name not in cafe_names:
             cafe_names.append(name)
 
-    concept = {
-        "디저트 카페":"다양한 디저트와 커피를 함께 즐기는 공간",
-        "브런치 카페":"식사와 커피를 동시에 즐길 수 있는 공간",
-        "감성 카페":"사진 촬영과 분위기를 중시하는 공간",
+    concept_dict = {
+        "디저트 카페":"다양한 디저트와 음료를 즐길 수 있는 공간",
+        "브런치 카페":"식사와 커피를 함께 즐기는 공간",
+        "감성 카페":"인테리어와 분위기를 강조한 공간",
         "공부 카페":"집중하기 좋은 조용한 공간",
-        "반려동물 카페":"반려동물과 함께 방문 가능한 공간",
-        "루프탑 카페":"개방감 있는 전망 중심 공간",
+        "반려동물 카페":"반려동물과 함께 이용하는 공간",
+        "루프탑 카페":"전망과 휴식을 강조한 공간",
         "포토존 카페":"SNS 인증샷 중심 공간",
         "책 카페":"독서와 휴식을 위한 공간",
         "가족 카페":"가족 단위 방문객 중심 공간",
-        "건강 음료 카페":"건강한 음료와 디저트 중심 공간"
+        "건강 음료 카페":"건강 음료 중심 공간"
     }
 
-    menu_dict = {
-        "봄":["벚꽃라떼","딸기케이크","유자에이드"],
-        "여름":["망고빙수","콜드브루","수박주스"],
-        "가을":["고구마라떼","밤케이크","단호박타르트"],
-        "겨울":["초코라떼","생강차","뱅쇼"]
+    season_menu = {
+        "봄":["벚꽃라떼", "딸기케이크", "유자에이드"],
+        "여름":["망고빙수", "수박주스", "콜드브루"],
+        "가을":["고구마라떼", "밤케이크", "단호박타르트"],
+        "겨울":["초코라떼", "생강차", "뱅쇼"]
     }
 
-    st.header("🎉 추천 결과")
+    st.header("🎉 창업 추천 결과")
 
     st.subheader("🏷 추천 카페 이름")
 
-    for n in cafe_names:
-        st.write("•", n)
+    for idx, name in enumerate(cafe_names, start=1):
+        st.write(f"{idx}. {name}")
 
     st.subheader("📖 컨셉 설명")
-    st.success(concept[theme])
-
-    st.subheader("🎯 추천 타깃")
-    st.write(customer)
+    st.success(concept_dict[theme])
 
     st.subheader("☕ 시그니처 메뉴")
 
-    for menu in menu_dict[season]:
-        st.write("✔", menu)
+    for menu in season_menu[season]:
+        st.write(f"✔ {menu}")
 
     st.subheader("🪑 인테리어 추천")
 
-    st.write(
-        """
+    st.write("""
 - 따뜻한 간접조명
-- 포토존 구성
-- 편안한 좌석 배치
-- 브랜드 컬러 통일
-"""
-    )
+- SNS 포토존 설치
+- 편안한 좌석 구성
+- 우드톤 인테리어
+- 계절 장식 활용
+""")
 
     st.subheader("📢 홍보 문구")
 
     st.info(
-        f"{district}에서 만나는 특별한 {theme}!"
+        f"{district}에서 만나는 특별한 {theme}! "
+        f"지금 방문해보세요."
     )
 
     st.subheader("📊 데이터 기반 상권 분석")
